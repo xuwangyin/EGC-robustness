@@ -1,0 +1,1 @@
+./run_imagenet_egc_eval_cls.sh ./eval_logs 1 1 0 127.0.0.1 context_imagenet32_c384_b2_d0_headc64_chmult124_attn32_16_8_convupd_simpleattn_s1k_linear_start_0.00085_end_0.012_bs512_lr1e-4_reweight_alpha_ce0.005_weakaug_training_ema.pt --val_data_dir=./data/imagenet256_features_val/

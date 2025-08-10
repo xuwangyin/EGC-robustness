@@ -37,6 +37,22 @@ For this example, you can run the following cmd:
 ./run_imagenet_egc_eval_cls.sh $LOGDIR 1 1 0 127.0.0.1 $CKPT_PATH --val_data_dir=./data/imagenet256_features_val
 ```
 
+# Adversarial robustness evaluation
+
+To evaluate the adversarial robustness of the EGC model:
+
+1. First setup ImageNet-1k dataset according to the "Prepare ImageNet data" section
+2. Extract raw image features (this saves the center cropped image data in ./data/imagenet256_features_val_raw/):
+   ```
+   python scripts/extract_feat_raw.py ./autoencoder_kl.pth ./data/imagenet256_features_val_raw/
+   ```
+3. Run the evaluation:
+   ```
+   ./full_acc_eval_end2end.sh
+   ```
+
+Note: The end-to-end PGD attack is implemented in `pgd_attack_xent_egc_end2end` function in `scripts/pgd_attack.py`.
+
 # Training models
 To reproduce the ImageNet result, you can run:
 

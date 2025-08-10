@@ -22,7 +22,21 @@ from guided_diffusion.script_util import (
     args_to_dict,
 )
 from guided_diffusion.image_datasets import get_val_ldm_data
-from pgd_attack import pgd_attack_xent_egc
+from pgd_attack import pgd_attack_xent_egc, pgd_attack_xent_egc_end2end
+from autoencoder import FrozenAutoencoderKL
+
+ddconfig_f8 = dict(
+    double_z=True,
+    z_channels=4,
+    resolution=256,
+    in_channels=3,
+    out_ch=3,
+    ch=128,
+    ch_mult=[1, 2, 4, 4],
+    num_res_blocks=2,
+    attn_resolutions=[],
+    dropout=0.0
+)
 
 def main():
     args = create_argparser().parse_args()
@@ -34,6 +48,11 @@ def main():
         **args_to_dict(args, egc_model_and_diffusion_defaults().keys())
     )
     
+    # Estimate number of parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.log(f"Model parameters: {total_params:,} total, {trainable_params:,} trainable")
+    
     model.load_state_dict(
         dist_util.load_state_dict(args.model_path, map_location="cpu")
     )
@@ -41,16 +60,19 @@ def main():
     if args.use_fp16:
         model.convert_to_fp16()
     model.eval()
+
+    # encoder = FrozenAutoencoderKL(ddconfig_f8, 4, "./autoencoder_kl.pth", 0.18215).cuda()
+    encoder = FrozenAutoencoderKL(ddconfig_f8, 4, "./autoencoder_kl.pth", 0.18215).to(dist_util.dev())
     
     val_data = get_val_ldm_data(
         data_dir=args.val_data_dir,
         img_num=50000,
         batch_size=args.val_batch_size,
         class_cond=True,
-        double_z=args.double_z,
-        sample_z=args.sample_z,
-        scale_factor=args.scale_factor,
-    )
+        double_z=False,
+        sample_z=False,
+        scale_factor=1,
+    ) # Set double_z=False, sample_z=False, and scale_factor=1 because we are only loading raw image data (sample_z is False by default, scale_factor is 0.18215 by default)
 
     # test_corrects = []
     # total_samples = 0
@@ -58,6 +80,9 @@ def main():
     #     image = image.to(dist_util.dev())
     #     label = label['y'].to(dist_util.dev())
     #     with th.no_grad():
+    #         image = encoder(image * 2. - 1, fn='encode_moments')
+    #         image, _ = th.chunk(image, 2, dim=1)
+    #         image = image * 0.18215
     #         time = th.zeros([image.shape[0]], dtype=th.long, device=dist_util.dev())
     #         pred = model(image, time, cls_mode=True)
     #         correct = (pred.max(1)[1] == label).float()
@@ -79,9 +104,9 @@ def main():
         img_num=50000,
         batch_size=args.val_batch_size,
         class_cond=True,
-        double_z=args.double_z,
-        sample_z=args.sample_z,
-        scale_factor=args.scale_factor,
+        double_z=False,
+        sample_z=False,
+        scale_factor=1,
     )
     
     adv_corrects = []
@@ -90,22 +115,28 @@ def main():
         image = image.to(dist_util.dev())
         label = label['y'].to(dist_util.dev())
         
-        # Generate adversarial examples
+        # Generate adversarial examples (end-to-end)
         model.eval()
-        adv_image = pgd_attack_xent_egc(
+        encoder.eval()
+        adv_image = pgd_attack_xent_egc_end2end(
             model=model,
+            encoder=encoder,
             x=image,
             true_labels=label,
             norm="L2",
-            eps=5.0,
+            eps=3.0,  # Standard ImageNet perturbation
             step_size=1.0,
-            steps=7,
+            steps=5,
             random_start=False
         )
         
         with th.no_grad():
-            time = th.zeros([adv_image.shape[0]], dtype=th.long, device=dist_util.dev())
-            pred = model(adv_image, time, cls_mode=True)
+            # Encode the adversarial image
+            encoded_adv = encoder(adv_image * 2. - 1, fn='encode_moments')
+            encoded_adv, _ = th.chunk(encoded_adv, 2, dim=1)
+            encoded_adv = encoded_adv * 0.18215
+            time = th.zeros([encoded_adv.shape[0]], dtype=th.long, device=dist_util.dev())
+            pred = model(encoded_adv, time, cls_mode=True)
             correct = (pred.max(1)[1] == label).float()
             adv_corrects.append(correct)
             
@@ -130,8 +161,8 @@ def create_argparser():
         autoencoder_type = 'KL',
         autoencoder_stride='8',
         sample_z=False,
-        double_z=True,
-        scale_factor=0.18215,
+        double_z=False,
+        scale_factor=1,
         val_data_dir='',
         val_batch_size=16,
     )

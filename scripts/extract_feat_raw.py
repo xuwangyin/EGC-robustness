@@ -42,13 +42,13 @@ for i, dirname in enumerate(nlist):
         path = os.path.join(subdir, name)
         img = Image.open(path).convert('RGB')
         img = T(img)
-        img = img * 2. - 1
-        img = img[None, ...]
-        img = img.to('cuda')
+        # img = img * 2. - 1
+        # img = img[None, ...]
+        # img = img.to('cuda')
 
-        moments = model(img, fn='encode_moments')
-        moments = moments.detach().cpu().numpy()
+        # moments = model(img, fn='encode_moments')
+        # moments = moments.detach().cpu().numpy()
+        img = img.numpy()
     
-        for moment in moments:
-            np.save(os.path.join(sys.argv[3], str(cnt)+'.npy'), np.array([moment, np.int64(i)], dtype=object), allow_pickle=True)
-            cnt += 1
+        np.save(os.path.join(sys.argv[3], str(cnt)+'.npy'), np.array([img, np.int64(i)], dtype=object), allow_pickle=True)
+        cnt += 1
